@@ -48,11 +48,17 @@ public class ZES_VibrationRaw extends ZES_TypeMongoDB
             System.out.println("channel: " + channel);
             System.out.println("sensor_code: " + sensorCode);
             System.out.println("ict_number: " + ictNumber);
-            int printCount = Math.min(10, sensorData.size());
+            int printCount = Math.min(99, sensorData.size());
+            StringBuilder sensorDataLog = new StringBuilder();
             for (int i = 0; i < printCount; i++)
             {
-                System.out.println("sensor_data[" + (i + 1) + "]: " + sensorData.get(i));
+                if (i > 0)
+                {
+                    sensorDataLog.append(", ");
+                }
+                sensorDataLog.append(sensorData.get(i));
             }
+            System.out.println("sensor_data[1.." + printCount + "]: " + sensorDataLog);
 
             Document document = new Document();
             document.append("timestamp", LocalDateTime.now().format(TIMESTAMP_FORMATTER));
