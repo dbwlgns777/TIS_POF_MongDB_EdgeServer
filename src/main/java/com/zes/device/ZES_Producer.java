@@ -17,6 +17,8 @@ import static com.zes.device.ZES_DeviceApplication.*;
 public class ZES_Producer implements Runnable
 {
     private static final int ZES_gv_BUFFER_SIZE = 230;
+    private static final int ZES_gv_PACKET_COUNT_PER_CONNECTION = 2;
+    private static final int ZES_gv_TOTAL_BUFFER_SIZE = ZES_gv_BUFFER_SIZE * ZES_gv_PACKET_COUNT_PER_CONNECTION;
     private static final int ZES_gv_CHECKSUM_OFFSET = 228;
     private static final int ZES_gv_CHECKSUM_SIZE = 2;
     private static final int ZES_gv_ICT_NUMBER_OFFSET = 13;
