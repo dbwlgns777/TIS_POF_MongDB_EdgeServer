@@ -16,6 +16,8 @@ import static com.zes.device.ZES_DeviceApplication.*;
 public class ZES_Producer implements Runnable
 {
     private static final int ZES_gv_BUFFER_SIZE = 230;
+    private static final int ZES_gv_PACKET_COUNT_PER_CONNECTION = 2;
+    private static final int ZES_gv_TOTAL_BUFFER_SIZE = ZES_gv_BUFFER_SIZE * ZES_gv_PACKET_COUNT_PER_CONNECTION;
     private static final int ZES_gv_CHECKSUM_OFFSET = 228;
     private static final int ZES_gv_CHECKSUM_SIZE = 2;
     private static final int ZES_gv_ICT_NUMBER_OFFSET = 13;
@@ -65,45 +67,50 @@ public class ZES_Producer implements Runnable
         try
         {
             InputStream ZES_lv_inputStream = socket.getInputStream();
-            while (!Thread.currentThread().isInterrupted())
+            byte[] ZES_lv_totalBuffer = new byte[ZES_gv_TOTAL_BUFFER_SIZE];
+            int ZES_lv_totalBytesRead = 0;
+            try
             {
-                byte[] ZES_lv_buffer = new byte[ZES_gv_BUFFER_SIZE];
-                int ZES_lv_totalBytesRead = 0;
-                try
+                while (ZES_lv_totalBytesRead < ZES_gv_TOTAL_BUFFER_SIZE)
                 {
-                    while (ZES_lv_totalBytesRead < ZES_gv_BUFFER_SIZE)
-                    {
-                        int ZES_lv_bytesRead = ZES_lv_inputStream.read(
-                                ZES_lv_buffer,
-                                ZES_lv_totalBytesRead,
-                                ZES_gv_BUFFER_SIZE - ZES_lv_totalBytesRead
-                        );
+                    int ZES_lv_bytesRead = ZES_lv_inputStream.read(
+                            ZES_lv_totalBuffer,
+                            ZES_lv_totalBytesRead,
+                            ZES_gv_TOTAL_BUFFER_SIZE - ZES_lv_totalBytesRead
+                    );
 
-                        if (ZES_lv_bytesRead == -1)
-                        {
-                            return; // 연결 종료
-                        }
-                        ZES_lv_totalBytesRead += ZES_lv_bytesRead;
+                    if (ZES_lv_bytesRead == -1)
+                    {
+                        ZES_gv_logger.warning("Socket closed before 460 bytes were received. bytesRead=" + ZES_lv_totalBytesRead);
+                        return;
                     }
                 }
-                catch (SocketTimeoutException e)
-                {
-                    return; // 일정 시간 데이터가 없으면 연결 종료
-                }
+            }
+            catch (SocketTimeoutException e)
+            {
+                ZES_gv_logger.warning("Read timeout before 460 bytes were received. bytesRead=" + ZES_lv_totalBytesRead);
+                return;
+            }
+
+            for (int packetNo = 0; packetNo < ZES_gv_PACKET_COUNT_PER_CONNECTION; packetNo++)
+            {
+                int packetStart = packetNo * ZES_gv_BUFFER_SIZE;
+                byte[] ZES_lv_packetBuffer = new byte[ZES_gv_BUFFER_SIZE];
+                System.arraycopy(ZES_lv_totalBuffer, packetStart, ZES_lv_packetBuffer, 0, ZES_gv_BUFFER_SIZE);
 
                 long ZES_lv_timestamp = Instant.now().toEpochMilli();
-                if (ZES_validateCheckSum(ZES_lv_buffer))
+                if (ZES_validateCheckSum(ZES_lv_packetBuffer))
                 {
-                    String ZES_lv_ictNumber = ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE);
+                    String ZES_lv_ictNumber = ZES_convertByteArrayToString(ZES_lv_packetBuffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE);
                     if (ZES_filterIctNumber(ZES_lv_ictNumber))
                     {
-                        queue.put(new ZES_VibrationRaw(ZES_lv_timestamp, ZES_lv_buffer, ZES_lv_ictNumber));
+                        queue.put(new ZES_VibrationRaw(ZES_lv_timestamp, ZES_lv_packetBuffer, ZES_lv_ictNumber));
                     }
                 }
                 else
                 {
-                    ZES_gv_logger.warning("Checksum validation failed for ICT: " +
-                            ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE));
+                    ZES_gv_logger.warning("Checksum validation failed for packetNo=" + packetNo + ", ICT: " +
+                            ZES_convertByteArrayToString(ZES_lv_packetBuffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE));
                 }
             }
         }
