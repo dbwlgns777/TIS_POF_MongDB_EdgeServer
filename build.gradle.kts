@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
 plugins {
     application
     java
@@ -20,6 +22,10 @@ application {
 }
 
 tasks {
+    withType<JavaCompile> {
+        options.encoding = "UTF-8"
+    }
+
     val fatJar = register<Jar>("fatJar") {
         dependsOn.addAll(listOf("compileJava", "processResources", "classes")) // We need this for Gradle optimization to work
         archiveClassifier.set("standalone") // Naming the jar
