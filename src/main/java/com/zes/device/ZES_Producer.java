@@ -18,9 +18,9 @@ public class ZES_Producer implements Runnable
     private static final int ZES_gv_BUFFER_SIZE = 230;
     private static final int ZES_gv_CHECKSUM_OFFSET = 228;
     private static final int ZES_gv_CHECKSUM_SIZE = 2;
-    private static final int ZES_gv_ICT_NUMBER_OFFSET = 10;
-    private static final int ZES_gv_ICT_NUMBER_SIZE = 10;
-    private static final int ZES_gv_READ_TIMEOUT_MS = 300; // 주기 관리: read가 안될 때만 timeout 처리
+    private static final int ZES_gv_ICT_NUMBER_OFFSET = 13;
+    private static final int ZES_gv_ICT_NUMBER_SIZE = 7;
+    private static final int ZES_gv_READ_TIMEOUT_MS = 1200; // 1초 내 다중 패킷 수신을 위해 timeout 여유 확보
 
     private final BlockingQueue<ZES_TypeMongoDB> queue;
     private final int threadNo;
@@ -65,44 +65,46 @@ public class ZES_Producer implements Runnable
         try
         {
             InputStream ZES_lv_inputStream = socket.getInputStream();
-            byte[] ZES_lv_buffer = new byte[ZES_gv_BUFFER_SIZE];
-            int ZES_lv_totalBytesRead = 0;
-            try
+            while (!Thread.currentThread().isInterrupted())
             {
-                while (ZES_lv_totalBytesRead < ZES_gv_BUFFER_SIZE)
+                byte[] ZES_lv_buffer = new byte[ZES_gv_BUFFER_SIZE];
+                int ZES_lv_totalBytesRead = 0;
+                try
                 {
-                    int ZES_lv_bytesRead = ZES_lv_inputStream.read(
-                            ZES_lv_buffer,
-                            ZES_lv_totalBytesRead,
-                            ZES_gv_BUFFER_SIZE - ZES_lv_totalBytesRead
-                    );
-
-                    if (ZES_lv_bytesRead == -1)
+                    while (ZES_lv_totalBytesRead < ZES_gv_BUFFER_SIZE)
                     {
-                        return; // 주기 관리: 연결 종료 시 즉시 종료 후 close
-                    }
-                    ZES_lv_totalBytesRead += ZES_lv_bytesRead;
-                }
-            }
-            catch (SocketTimeoutException e)
-            {
-                ZES_gv_logger.warning("Read timeout in Producer thread " + threadNo + " (주기 관리)");
-                return; // 주기 관리: read 안될 때 timeout으로 종료 후 close
-            }
+                        int ZES_lv_bytesRead = ZES_lv_inputStream.read(
+                                ZES_lv_buffer,
+                                ZES_lv_totalBytesRead,
+                                ZES_gv_BUFFER_SIZE - ZES_lv_totalBytesRead
+                        );
 
-            long ZES_lv_timestamp = Instant.now().toEpochMilli();
-            if (ZES_validateCheckSum(ZES_lv_buffer))
-            {
-                String ZES_lv_ictNumber = ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE);
-                if (ZES_filterIctNumber(ZES_lv_ictNumber))
-                {
-                    queue.put(new ZES_VibrationRaw(ZES_lv_timestamp, ZES_lv_buffer, ZES_lv_ictNumber));
+                        if (ZES_lv_bytesRead == -1)
+                        {
+                            return; // 연결 종료
+                        }
+                        ZES_lv_totalBytesRead += ZES_lv_bytesRead;
+                    }
                 }
-            }
-            else
-            {
-                ZES_gv_logger.warning("Checksum validation failed for ICT: " +
-                        ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE));
+                catch (SocketTimeoutException e)
+                {
+                    return; // 일정 시간 데이터가 없으면 연결 종료
+                }
+
+                long ZES_lv_timestamp = Instant.now().toEpochMilli();
+                if (ZES_validateCheckSum(ZES_lv_buffer))
+                {
+                    String ZES_lv_ictNumber = ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE);
+                    if (ZES_filterIctNumber(ZES_lv_ictNumber))
+                    {
+                        queue.put(new ZES_VibrationRaw(ZES_lv_timestamp, ZES_lv_buffer, ZES_lv_ictNumber));
+                    }
+                }
+                else
+                {
+                    ZES_gv_logger.warning("Checksum validation failed for ICT: " +
+                            ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE));
+                }
             }
         }
         catch (IOException e)
