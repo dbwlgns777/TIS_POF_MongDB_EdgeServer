@@ -18,8 +18,8 @@ public class ZES_Producer implements Runnable
     private static final int ZES_gv_BUFFER_SIZE = 230;
     private static final int ZES_gv_CHECKSUM_OFFSET = 228;
     private static final int ZES_gv_CHECKSUM_SIZE = 2;
-    private static final int ZES_gv_ICT_NUMBER_OFFSET = 10;
-    private static final int ZES_gv_ICT_NUMBER_SIZE = 10;
+    private static final int ZES_gv_ICT_NUMBER_OFFSET = 13;
+    private static final int ZES_gv_ICT_NUMBER_SIZE = 7;
     private static final int ZES_gv_READ_TIMEOUT_MS = 300; // 주기 관리: read가 안될 때만 timeout 처리
 
     private final BlockingQueue<ZES_TypeMongoDB> queue;
