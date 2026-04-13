@@ -3,6 +3,7 @@ package com.zes.device.models;
 import com.zes.device.config.ZES_MongoConfig;
 import org.bson.Document;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,6 +53,7 @@ public class ZES_VibrationRaw extends ZES_TypeMongoDB
             }
 
             Document document = new Document();
+            document.append("timestamp", Instant.now().toEpochMilli());
             document.append("header", header);
             document.append("flag", flag);
             document.append("channel_key", channel);
