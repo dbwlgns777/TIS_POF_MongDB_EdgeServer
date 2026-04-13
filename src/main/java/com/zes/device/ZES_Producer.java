@@ -3,6 +3,7 @@ package com.zes.device;
 import com.zes.device.models.ZES_TypeMongoDB;
 import com.zes.device.models.ZES_VibrationRaw;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
@@ -67,36 +68,50 @@ public class ZES_Producer implements Runnable
         try
         {
             InputStream ZES_lv_inputStream = socket.getInputStream();
-            byte[] ZES_lv_totalBuffer = new byte[ZES_gv_TOTAL_BUFFER_SIZE];
-            int ZES_lv_totalBytesRead = 0;
+            ByteArrayOutputStream ZES_lv_totalBuffer = new ByteArrayOutputStream();
+            byte[] ZES_lv_readBuffer = new byte[1024];
             try
             {
-                while (ZES_lv_totalBytesRead < ZES_gv_TOTAL_BUFFER_SIZE)
+                while (true)
                 {
                     int ZES_lv_bytesRead = ZES_lv_inputStream.read(
-                            ZES_lv_totalBuffer,
-                            ZES_lv_totalBytesRead,
-                            ZES_gv_TOTAL_BUFFER_SIZE - ZES_lv_totalBytesRead
+                            ZES_lv_readBuffer,
+                            0,
+                            ZES_lv_readBuffer.length
                     );
 
                     if (ZES_lv_bytesRead == -1)
                     {
-                        ZES_gv_logger.warning("Socket closed before 460 bytes were received. bytesRead=" + ZES_lv_totalBytesRead);
-                        return;
+                        break;
                     }
+                    ZES_lv_totalBuffer.write(ZES_lv_readBuffer, 0, ZES_lv_bytesRead);
                 }
             }
             catch (SocketTimeoutException e)
             {
-                ZES_gv_logger.warning("Read timeout before 460 bytes were received. bytesRead=" + ZES_lv_totalBytesRead);
+                // timeout 시점까지 수신된 데이터만 패킷 처리
+            }
+
+            byte[] ZES_lv_receivedData = ZES_lv_totalBuffer.toByteArray();
+            if (ZES_lv_receivedData.length == 0)
+            {
+                ZES_gv_logger.warning("Socket closed before payload was received. bytesRead=0");
                 return;
             }
 
-            for (int packetNo = 0; packetNo < ZES_gv_PACKET_COUNT_PER_CONNECTION; packetNo++)
+            int ZES_lv_packetCount = ZES_lv_receivedData.length / ZES_gv_BUFFER_SIZE;
+            int ZES_lv_remainder = ZES_lv_receivedData.length % ZES_gv_BUFFER_SIZE;
+            if (ZES_lv_remainder != 0)
+            {
+                ZES_gv_logger.warning("Received bytes are not aligned to 230. totalBytes=" +
+                        ZES_lv_receivedData.length + ", remainder=" + ZES_lv_remainder);
+            }
+
+            for (int packetNo = 0; packetNo < ZES_lv_packetCount; packetNo++)
             {
                 int packetStart = packetNo * ZES_gv_BUFFER_SIZE;
                 byte[] ZES_lv_packetBuffer = new byte[ZES_gv_BUFFER_SIZE];
-                System.arraycopy(ZES_lv_totalBuffer, packetStart, ZES_lv_packetBuffer, 0, ZES_gv_BUFFER_SIZE);
+                System.arraycopy(ZES_lv_receivedData, packetStart, ZES_lv_packetBuffer, 0, ZES_gv_BUFFER_SIZE);
 
                 long ZES_lv_timestamp = Instant.now().toEpochMilli();
                 if (ZES_validateCheckSum(ZES_lv_packetBuffer))
