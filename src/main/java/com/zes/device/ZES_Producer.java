@@ -84,7 +84,6 @@ public class ZES_Producer implements Runnable
                         ZES_gv_logger.warning("Socket closed before 460 bytes were received. bytesRead=" + ZES_lv_totalBytesRead);
                         return;
                     }
-                    ZES_lv_totalBytesRead += ZES_lv_bytesRead;
                 }
             }
             catch (SocketTimeoutException e)
