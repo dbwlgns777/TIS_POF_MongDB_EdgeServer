@@ -3,12 +3,14 @@ package com.zes.device.models;
 import com.zes.device.config.ZES_MongoConfig;
 import org.bson.Document;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ZES_VibrationRaw extends ZES_TypeMongoDB
 {
+    private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int HEADER_START = 0;
     private static final int HEADER_END = 4;
     private static final int FLAG_START = 5;
@@ -53,7 +55,7 @@ public class ZES_VibrationRaw extends ZES_TypeMongoDB
             }
 
             Document document = new Document();
-            document.append("timestamp", Instant.now().toEpochMilli());
+            document.append("timestamp", LocalDateTime.now().format(TIMESTAMP_FORMATTER));
             document.append("header", header);
             document.append("flag", flag);
             document.append("channel_key", channel);
