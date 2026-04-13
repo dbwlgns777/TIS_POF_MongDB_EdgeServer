@@ -3,6 +3,7 @@ package com.zes.device;
 import com.zes.device.models.ZES_TypeMongoDB;
 import com.zes.device.models.ZES_VibrationRaw;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
@@ -18,9 +19,9 @@ public class ZES_Producer implements Runnable
     private static final int ZES_gv_BUFFER_SIZE = 230;
     private static final int ZES_gv_CHECKSUM_OFFSET = 228;
     private static final int ZES_gv_CHECKSUM_SIZE = 2;
-    private static final int ZES_gv_ICT_NUMBER_OFFSET = 10;
-    private static final int ZES_gv_ICT_NUMBER_SIZE = 10;
-    private static final int ZES_gv_READ_TIMEOUT_MS = 300; // 주기 관리: read가 안될 때만 timeout 처리
+    private static final int ZES_gv_ICT_NUMBER_OFFSET = 13;
+    private static final int ZES_gv_ICT_NUMBER_SIZE = 7;
+    private static final int ZES_gv_READ_TIMEOUT_MS = 1200; // 1초 내 다중 패킷 수신을 위해 timeout 여유 확보
 
     private final BlockingQueue<ZES_TypeMongoDB> queue;
     private final int threadNo;
@@ -65,44 +66,65 @@ public class ZES_Producer implements Runnable
         try
         {
             InputStream ZES_lv_inputStream = socket.getInputStream();
-            byte[] ZES_lv_buffer = new byte[ZES_gv_BUFFER_SIZE];
-            int ZES_lv_totalBytesRead = 0;
+            ByteArrayOutputStream ZES_lv_totalBuffer = new ByteArrayOutputStream();
+            byte[] ZES_lv_readBuffer = new byte[1024];
             try
             {
-                while (ZES_lv_totalBytesRead < ZES_gv_BUFFER_SIZE)
+                while (true)
                 {
                     int ZES_lv_bytesRead = ZES_lv_inputStream.read(
-                            ZES_lv_buffer,
-                            ZES_lv_totalBytesRead,
-                            ZES_gv_BUFFER_SIZE - ZES_lv_totalBytesRead
+                            ZES_lv_readBuffer,
+                            0,
+                            ZES_lv_readBuffer.length
                     );
 
                     if (ZES_lv_bytesRead == -1)
                     {
-                        return; // 주기 관리: 연결 종료 시 즉시 종료 후 close
+                        break;
                     }
-                    ZES_lv_totalBytesRead += ZES_lv_bytesRead;
+                    ZES_lv_totalBuffer.write(ZES_lv_readBuffer, 0, ZES_lv_bytesRead);
                 }
             }
             catch (SocketTimeoutException e)
             {
-                ZES_gv_logger.warning("Read timeout in Producer thread " + threadNo + " (주기 관리)");
-                return; // 주기 관리: read 안될 때 timeout으로 종료 후 close
+                // timeout 시점까지 수신된 데이터만 패킷 처리
             }
 
-            long ZES_lv_timestamp = Instant.now().toEpochMilli();
-            if (ZES_validateCheckSum(ZES_lv_buffer))
+            byte[] ZES_lv_receivedData = ZES_lv_totalBuffer.toByteArray();
+            if (ZES_lv_receivedData.length == 0)
             {
-                String ZES_lv_ictNumber = ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE);
-                if (ZES_filterIctNumber(ZES_lv_ictNumber))
-                {
-                    queue.put(new ZES_VibrationRaw(ZES_lv_timestamp, ZES_lv_buffer, ZES_lv_ictNumber));
-                }
+                ZES_gv_logger.warning("Socket closed before payload was received. bytesRead=0");
+                return;
             }
-            else
+
+            int ZES_lv_packetCount = ZES_lv_receivedData.length / ZES_gv_BUFFER_SIZE;
+            int ZES_lv_remainder = ZES_lv_receivedData.length % ZES_gv_BUFFER_SIZE;
+            if (ZES_lv_remainder != 0)
             {
-                ZES_gv_logger.warning("Checksum validation failed for ICT: " +
-                        ZES_convertByteArrayToString(ZES_lv_buffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE));
+                ZES_gv_logger.warning("Received bytes are not aligned to 230. totalBytes=" +
+                        ZES_lv_receivedData.length + ", remainder=" + ZES_lv_remainder);
+            }
+
+            for (int packetNo = 0; packetNo < ZES_lv_packetCount; packetNo++)
+            {
+                int packetStart = packetNo * ZES_gv_BUFFER_SIZE;
+                byte[] ZES_lv_packetBuffer = new byte[ZES_gv_BUFFER_SIZE];
+                System.arraycopy(ZES_lv_receivedData, packetStart, ZES_lv_packetBuffer, 0, ZES_gv_BUFFER_SIZE);
+
+                long ZES_lv_timestamp = Instant.now().toEpochMilli();
+                if (ZES_validateCheckSum(ZES_lv_packetBuffer))
+                {
+                    String ZES_lv_ictNumber = ZES_convertByteArrayToString(ZES_lv_packetBuffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE);
+                    if (ZES_filterIctNumber(ZES_lv_ictNumber))
+                    {
+                        queue.put(new ZES_VibrationRaw(ZES_lv_timestamp, ZES_lv_packetBuffer, ZES_lv_ictNumber));
+                    }
+                }
+                else
+                {
+                    ZES_gv_logger.warning("Checksum validation failed for packetNo=" + packetNo + ", ICT: " +
+                            ZES_convertByteArrayToString(ZES_lv_packetBuffer, ZES_gv_ICT_NUMBER_OFFSET, ZES_gv_ICT_NUMBER_SIZE));
+                }
             }
         }
         catch (IOException e)
